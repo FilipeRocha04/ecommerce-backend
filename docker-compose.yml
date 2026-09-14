@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autopecas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autopecas}
+      POSTGRES_DB: ${POSTGRES_DB:-autopecas}
+    ports:
+      - "5434:5432"
+    volumes:
+      - autopecas_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autopecas}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - autopecas
+
+  backend:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_ENV: development
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-autopecas}:${POSTGRES_PASSWORD:-autopecas}@postgres:5432/${POSTGRES_DB:-autopecas}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - autopecas
+
+networks:
+  autopecas:
+    driver: bridge
+
+volumes:
+  autopecas_pgdata:

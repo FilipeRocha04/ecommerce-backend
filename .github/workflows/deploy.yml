@@ -1,0 +1,107 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/ecommerce-backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: autopecas
+          POSTGRES_PASSWORD: autopecas
+          POSTGRES_DB: autopecas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U autopecas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://autopecas:autopecas@localhost:5432/autopecas_test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Definir tag da imagem
+        id: meta
+        run: echo "tag=${{ env.IMAGE }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy na VPS via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            set -e
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+
+            docker network create autopecas_net 2>/dev/null || true
+            docker network connect autopecas_net autopecas_postgres 2>/dev/null || true
+
+            docker pull ${{ needs.build-and-push.outputs.image_tag }}
+
+            docker stop autopecas_backend 2>/dev/null || true
+            docker rm autopecas_backend 2>/dev/null || true
+
+            docker run -d \
+              --name autopecas_backend \
+              --restart unless-stopped \
+              --network autopecas_net \
+              -e DATABASE_URL="postgresql+psycopg://autopecas:${{ secrets.VPS_DB_PASSWORD }}@autopecas_postgres:5432/autopecas" \
+              -e APP_ENV=production \
+              -e SECRET_KEY="${{ secrets.APP_SECRET_KEY }}" \
+              -p 127.0.0.1:8000:8000 \
+              ${{ needs.build-and-push.outputs.image_tag }}
+
+            sleep 5
+            docker exec autopecas_backend alembic upgrade head
+            docker image prune -f
