@@ -102,7 +102,7 @@ jobs:
               -e DATABASE_URL="postgresql+psycopg://autopecas:${{ secrets.VPS_DB_PASSWORD }}@autopecas_postgres:5432/autopecas" \
               -e APP_ENV=production \
               -e SECRET_KEY="${{ secrets.APP_SECRET_KEY }}" \
-              -p 127.0.0.1:8000:8000 \
+              -p 127.0.0.1:8020:8000 \
               ${{ needs.build-and-push.outputs.image_tag }}
 
             sleep 5
