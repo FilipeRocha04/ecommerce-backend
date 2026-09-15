@@ -50,7 +50,13 @@ Variáveis de ambiente (`.env`):
 APP_ENV=development
 SECRET_KEY=troque-por-um-valor-seguro
 DATABASE_URL=postgresql+psycopg://autopecas:autopecas@localhost:5434/autopecas
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
 ```
+
+`OPENAI_API_KEY` é opcional para o e-commerce tradicional, mas obrigatória para o assistente de
+compras (`POST /api/v1/assistente/conversar`) — sem ela, esse endpoint responde
+`422 assistente_nao_configurado`.
 
 `.env` nunca deve ser versionado (já está no `.gitignore`).
 
@@ -132,7 +138,7 @@ http://localhost:8000/docs
 ```
 
 As rotas estão organizadas nas tags Produtos, Categorias, Marcas, Veículos, Compatibilidade,
-Estoque, Carrinhos, Pedidos e Saúde.
+Estoque, Carrinhos, Pedidos, Assistente e Saúde.
 
 ## Estrutura de pastas
 
@@ -145,6 +151,7 @@ backend/
 │   ├── schemas/              # contratos Pydantic
 │   ├── repositories/         # acesso ao banco
 │   ├── services/              # regras de negócio
+│   ├── agent/                 # agente de IA (LangGraph): tools e grafo do assistente
 │   ├── api/routes/           # endpoints HTTP
 │   └── tests/                 # testes pytest
 ├── alembic/                  # migrations
@@ -189,14 +196,38 @@ DELETE /api/v1/carrinhos/{carrinho_id}/itens/{item_id}
 POST   /api/v1/pedidos
 GET    /api/v1/pedidos?usuario_id=...
 GET    /api/v1/pedidos/{pedido_id}
+
+POST   /api/v1/assistente/conversar
 ```
 
-## Sobre o assistente de IA (futuro)
+## Assistente de compras (IA)
 
-Este backend **não** implementa o agente de IA. As rotas acima foram desenhadas para,
-futuramente, serem chamadas como tools por um agente (LangGraph ou similar): o LLM nunca terá
-preço, estoque ou compatibilidade hardcoded — tudo é consultado nesta API, a mesma usada pelo
-e-commerce tradicional.
+`POST /api/v1/assistente/conversar` é um agente construído com **LangGraph** + **OpenAI**
+(`app/agent/`). O LLM nunca tem preço, estoque, produtos ou compatibilidade no prompt — ele decide
+quando chamar as tools abaixo, que reutilizam exatamente os mesmos services das rotas REST
+(nenhuma regra de negócio duplicada):
+
+```text
+buscar_produtos, obter_produto, verificar_compatibilidade, consultar_estoque,
+obter_carrinho, adicionar_ao_carrinho, remover_do_carrinho
+```
+
+Corpo da requisição:
+
+```json
+{
+  "mensagem": "Preciso de pastilhas de freio para um Gol 1.6 2020",
+  "historico": [{ "role": "user", "content": "..." }, { "role": "assistant", "content": "..." }],
+  "carrinho_id": "uuid opcional — continua um carrinho existente",
+  "variante_veiculo_id": "uuid opcional — veículo já selecionado pelo cliente"
+}
+```
+
+Resposta: texto do assistente, os produtos que ele efetivamente consultou/recomendou (dados reais,
+vindos do banco) e o estado atualizado do carrinho, se ele foi alterado na conversa.
+
+Sem `OPENAI_API_KEY` configurada, o endpoint responde `422 assistente_nao_configurado` em vez de
+quebrar — o restante da API funciona normalmente.
 
 ## Nota sobre a coexistência com o frontend
 

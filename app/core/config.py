@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-key-change-me"
     database_url: str = "postgresql+psycopg://autopecas:autopecas@localhost:5432/autopecas"
     cors_origin_regex: str = r"^http://localhost(:\d+)?$"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
 
     @property
     def is_testing(self) -> bool:

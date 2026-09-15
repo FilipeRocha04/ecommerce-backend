@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import (
+    assistente,
     carrinhos,
     categorias,
     compatibilidade,
@@ -51,3 +52,4 @@ app.include_router(veiculos.router)
 app.include_router(compatibilidade.router)
 app.include_router(carrinhos.router)
 app.include_router(pedidos.router)
+app.include_router(assistente.router)
