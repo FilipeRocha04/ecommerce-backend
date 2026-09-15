@@ -12,6 +12,7 @@ from app.services.carrinho import CarrinhoService
 from app.services.compatibilidade import CompatibilidadeService
 from app.services.estoque import EstoqueService
 from app.services.produto import ProdutoService
+from app.services.veiculo import VeiculoService
 
 
 def _resumo_produto(produto: Produto) -> dict[str, Any]:
@@ -51,10 +52,41 @@ def criar_tools(db: Session, contexto: dict[str, Any]) -> list:
     compatibilidade_service = CompatibilidadeService(db)
     estoque_service = EstoqueService(db)
     carrinho_service = CarrinhoService(db)
+    veiculo_service = VeiculoService(db)
 
     def _registrar_produtos(produtos: list[Produto]) -> None:
         for produto in produtos:
             contexto["produtos"][produto.id] = produto
+
+    @tool
+    def buscar_variante_veiculo(
+        fabricante: str = "", modelo: str = "", ano: int = 0, motor: str = ""
+    ) -> str:
+        """Resolve a descrição de um veículo (fabricante, modelo, ano e/ou motor)
+        para o(s) variante_veiculo_id correspondente(s) no catálogo. Use esta
+        ferramenta sempre que o cliente mencionar seu carro, antes de verificar
+        compatibilidade ou buscar produtos filtrados por veículo — nunca invente
+        um variante_veiculo_id."""
+        variantes = veiculo_service.listar_variantes(
+            fabricante=fabricante or None,
+            modelo=modelo or None,
+            ano=ano or None,
+            motor=motor or None,
+        )
+        resumo = [
+            {
+                "variante_veiculo_id": str(v.id),
+                "fabricante": v.fabricante_nome,
+                "modelo": v.modelo_nome,
+                "ano_inicio": v.ano_inicio,
+                "ano_fim": v.ano_fim,
+                "motor": v.motor,
+                "combustivel": v.combustivel,
+                "cambio": v.cambio,
+            }
+            for v in variantes
+        ]
+        return json.dumps(resumo, ensure_ascii=False)
 
     @tool
     def buscar_produtos(termo: str = "", variante_veiculo_id: str = "") -> str:
@@ -149,6 +181,7 @@ def criar_tools(db: Session, contexto: dict[str, Any]) -> list:
         return json.dumps(_resumo_carrinho(carrinho), ensure_ascii=False)
 
     return [
+        buscar_variante_veiculo,
         buscar_produtos,
         obter_produto,
         verificar_compatibilidade,
